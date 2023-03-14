@@ -2,8 +2,11 @@ pluginManagement {
     repositories {
         gradlePluginPortal()
         google()
+        jcenter()
         mavenCentral()
+        maven { url "https://jitpack.io" }
     }
+
     plugins {
         id 'com.android.application' version '7.1.0-alpha11'
         id 'com.android.library' version '7.1.0-alpha11'
@@ -14,6 +17,8 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        jcenter()
+        maven { url "https://jitpack.io" }
         mavenCentral()
     }
 }
