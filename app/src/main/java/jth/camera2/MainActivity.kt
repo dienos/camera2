@@ -6,9 +6,14 @@ import android.R.attr.maxWidth
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.os.Environment.DIRECTORY_PICTURES
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -19,18 +24,21 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.yalantis.ucrop.UCrop
 import jth.camera2.databinding.ActivityMainBinding
-import java.io.File
+import java.io.*
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+
 typealias LumaListener = (luma: Double) -> Unit
 
 class MainActivity : AppCompatActivity() {
 
     companion object {
+        private const val MIME_TYPE_JPG = "image/jpeg"
+        private const val IMAGE_RELATIVE_PATH = "Pictures/CameraX-Image"
         private const val TAG = "CameraXApp"
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
         private const val REQUEST_CODE_PERMISSIONS = 10
@@ -68,23 +76,29 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
-    private fun takePhoto() {
-        val imageCapture = imageCapture ?: return
+    private fun createContentValues(isCroppedFile: Boolean): ContentValues {
+        return ContentValues().apply {
+            if (isCroppedFile) {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, "cropped_" + getFileName())
+            } else {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, getFileName())
+            }
 
-        val name = getFileName()
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            put(MediaStore.MediaColumns.MIME_TYPE, MIME_TYPE_JPG)
             if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/CameraX-Image")
+                put(MediaStore.Images.Media.RELATIVE_PATH, IMAGE_RELATIVE_PATH)
             }
         }
+    }
+
+    private fun takePhoto() {
+        val imageCapture = imageCapture ?: return
 
         val outputOptions = ImageCapture.OutputFileOptions
             .Builder(
                 contentResolver,
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues
+                createContentValues(false)
             )
             .build()
 
@@ -98,15 +112,27 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     output.savedUri?.let { savedUri ->
-                        val savedFilePath = getRealPathFromURI(savedUri) // Uri에서 파일 경로를 얻어옴
-                        sourceFile = File(savedFilePath) // 원본 이미지 파일을 가리키는 File 객체 생성
-                        openCropActivity(Uri.fromFile(sourceFile), getDestinationUri())
+                        sourceFile = File(getRealPathFromURI(savedUri))
+
+                        openCropActivity(
+                            Uri.fromFile(sourceFile),
+                            createImageUri()
+                        )
 
                         val msg = "Photo capture succeeded: $savedUri"
                         Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
+        )
+    }
+
+    private fun createImageUri(): Uri {
+        return Uri.fromFile(
+            File(
+                cacheDir,
+                "cropped_${getFileName()}.jpg"
+            )
         )
     }
 
@@ -136,25 +162,41 @@ class MainActivity : AppCompatActivity() {
             .start(this)
     }
 
-    private fun getDestinationUri(): Uri {
-        val cropFileName = "cropped_${System.currentTimeMillis()}.jpg"
-        val path = "${getExternalFilesDir("Pictures/CameraX-Image")}/${cropFileName}"
-        return Uri.fromFile(File(path))
+    private fun saveCroppedImage(croppedUri: Uri) {
+        croppedUri.path?.let { path ->
+            val bitmap: Bitmap
+
+            if (Build.VERSION.SDK_INT < 28) {
+                bitmap = MediaStore.Images.Media.getBitmap(
+                    this.contentResolver,
+                    croppedUri
+                )
+            } else {
+                val source = ImageDecoder.createSource(this.contentResolver, croppedUri)
+                bitmap = ImageDecoder.decodeBitmap(source)
+            }
+
+            val fos = FileOutputStream(path)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, fos)
+            fos.close()
+
+            destinationFile = File(path);
+            //destinationFile?.delete()
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (resultCode == RESULT_OK && requestCode == UCrop.REQUEST_CROP) {
-            val resultUri = data?.let {
+            val croppedUri = data?.let {
                 UCrop.getOutput(it)
             }
 
-            resultUri?.let { uri ->
-                uri.path?.let { path ->
-                    destinationFile = File(path)
-                    sourceFile?.delete()
-                }
+            croppedUri?.let { uri ->
+                saveCroppedImage(
+                    croppedUri = uri
+                )
             }
         } else if (resultCode == UCrop.RESULT_ERROR) {
             data?.let {
