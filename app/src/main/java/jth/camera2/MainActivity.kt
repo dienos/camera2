@@ -6,13 +6,9 @@ import android.R.attr.maxWidth
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.Cursor
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -29,7 +25,6 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-
 
 typealias LumaListener = (luma: Double) -> Unit
 
@@ -50,9 +45,8 @@ class MainActivity : AppCompatActivity() {
             }.toTypedArray()
     }
 
-
-    private lateinit var sourceFile: File
-    private var cropFileName = ""
+    private var sourceFile: File? = null
+    private var destinationFile: File? = null
     private lateinit var viewBinding: ActivityMainBinding
     private var imageCapture: ImageCapture? = null
     private lateinit var cameraExecutor: ExecutorService
@@ -62,7 +56,6 @@ class MainActivity : AppCompatActivity() {
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
 
-        // Request camera permissions
         if (allPermissionsGranted()) {
             startCamera()
         } else {
@@ -71,16 +64,13 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        // Set up the listeners for take photo and video capture buttons
         viewBinding.imageCaptureButton.setOnClickListener { takePhoto() }
         cameraExecutor = Executors.newSingleThreadExecutor()
     }
 
     private fun takePhoto() {
-        // Get a stable reference of the modifiable image capture use case
         val imageCapture = imageCapture ?: return
 
-        // Create time stamped name and MediaStore entry.
         val name = getFileName()
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -90,7 +80,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Create output options object which contains file + metadata
         val outputOptions = ImageCapture.OutputFileOptions
             .Builder(
                 contentResolver,
@@ -99,8 +88,6 @@ class MainActivity : AppCompatActivity() {
             )
             .build()
 
-        // Set up image capture listener, which is triggered after photo has
-        // been taken
         imageCapture.takePicture(
             outputOptions,
             ContextCompat.getMainExecutor(this),
@@ -110,7 +97,6 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-
                     output.savedUri?.let { savedUri ->
                         val savedFilePath = getRealPathFromURI(savedUri) // Uri에서 파일 경로를 얻어옴
                         sourceFile = File(savedFilePath) // 원본 이미지 파일을 가리키는 File 객체 생성
@@ -151,25 +137,31 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getDestinationUri(): Uri {
-        cropFileName = "cropped_${System.currentTimeMillis()}.jpg"
-        val path = "${getExternalFilesDir(Environment.DIRECTORY_PICTURES)}/${cropFileName}"
+        val cropFileName = "cropped_${System.currentTimeMillis()}.jpg"
+        val path = "${getExternalFilesDir("Pictures/CameraX-Image")}/${cropFileName}"
         return Uri.fromFile(File(path))
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode == RESULT_OK && requestCode == UCrop.REQUEST_CROP) {
-            val resultUri = data?.let { UCrop.getOutput(it) }
-            resultUri?.let { uri ->
-                val destinationFile = File(uri.path!!)
-                sourceFile.copyTo(destinationFile)
-                sourceFile.delete()
 
+        if (resultCode == RESULT_OK && requestCode == UCrop.REQUEST_CROP) {
+            val resultUri = data?.let {
+                UCrop.getOutput(it)
+            }
+
+            resultUri?.let { uri ->
+                uri.path?.let { path ->
+                    destinationFile = File(path)
+                    sourceFile?.delete()
+                }
             }
         } else if (resultCode == UCrop.RESULT_ERROR) {
-            val cropError = UCrop.getError(data!!)
-            cropError?.let {
-                Toast.makeText(baseContext, it.message, Toast.LENGTH_SHORT).show()
+            data?.let {
+                val cropError = UCrop.getError(it)
+                cropError?.let { error ->
+                    Toast.makeText(baseContext, error.message, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -179,10 +171,8 @@ class MainActivity : AppCompatActivity() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            // Preview
             val preview = Preview.Builder()
                 .build()
                 .also {
@@ -197,14 +187,10 @@ class MainActivity : AppCompatActivity() {
                     })
                 }
 
-            // Select back camera as a default
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
-                // Unbind use cases before rebinding
                 cameraProvider.unbindAll()
-
-                // Bind use cases to camera
                 cameraProvider.bindToLifecycle(
                     this, cameraSelector, preview, imageCapture, imageAnalyzer
                 )
