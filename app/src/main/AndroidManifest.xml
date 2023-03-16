@@ -9,6 +9,7 @@
         android:maxSdkVersion="28" />
 
     <application
+        android:name=".ui.CameraApplication"
         android:requestLegacyExternalStorage="true"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -17,7 +18,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Camera2">
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.views.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

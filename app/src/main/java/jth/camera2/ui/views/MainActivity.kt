@@ -1,4 +1,4 @@
-package jth.camera2
+package jth.camera2.ui.views
 
 import android.Manifest
 import android.R.attr.maxHeight
@@ -17,13 +17,17 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.yalantis.ucrop.UCrop
+import dagger.hilt.android.AndroidEntryPoint
+import jth.camera2.R
 import jth.camera2.databinding.ActivityMainBinding
+import jth.camera2.ui.viewmodels.MainViewModel
 import java.io.*
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
@@ -31,10 +35,12 @@ import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-
 typealias LumaListener = (luma: Double) -> Unit
 
-class MainActivity : AppCompatActivity() {
+@AndroidEntryPoint
+class MainActivity : BaseActivity<ActivityMainBinding>() {
+
+    private val viewModel: MainViewModel by viewModels()
 
     companion object {
         private const val MIME_TYPE_JPG = "image/jpeg"
@@ -55,41 +61,8 @@ class MainActivity : AppCompatActivity() {
 
     private var sourceFile: File? = null
     private var destinationFile: File? = null
-    private lateinit var viewBinding: ActivityMainBinding
     private var imageCapture: ImageCapture? = null
     private lateinit var cameraExecutor: ExecutorService
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        viewBinding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(viewBinding.root)
-
-        if (allPermissionsGranted()) {
-            startCamera()
-        } else {
-            ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
-            )
-        }
-
-        viewBinding.imageCaptureButton.setOnClickListener { takePhoto() }
-        cameraExecutor = Executors.newSingleThreadExecutor()
-    }
-
-    private fun createContentValues(isCroppedFile: Boolean): ContentValues {
-        return ContentValues().apply {
-            if (isCroppedFile) {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, "cropped_" + getFileName())
-            } else {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, getFileName())
-            }
-
-            put(MediaStore.MediaColumns.MIME_TYPE, MIME_TYPE_JPG)
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, IMAGE_RELATIVE_PATH)
-            }
-        }
-    }
 
     private fun takePhoto() {
         val imageCapture = imageCapture ?: return
@@ -98,7 +71,7 @@ class MainActivity : AppCompatActivity() {
             .Builder(
                 contentResolver,
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                createContentValues(false)
+                viewModel.getContentValues(false, MIME_TYPE_JPG, IMAGE_RELATIVE_PATH)
             )
             .build()
 
@@ -112,11 +85,11 @@ class MainActivity : AppCompatActivity() {
 
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     output.savedUri?.let { savedUri ->
-                        sourceFile = File(getRealPathFromURI(savedUri))
+                        sourceFile = File(viewModel.getRealPathFromUri(contentResolver, savedUri))
 
                         openCropActivity(
                             Uri.fromFile(sourceFile),
-                            createImageUri()
+                            viewModel.getImageUri(dir = cacheDir)
                         )
 
                         val msg = "Photo capture succeeded: $savedUri"
@@ -126,30 +99,6 @@ class MainActivity : AppCompatActivity() {
             }
         )
     }
-
-    private fun createImageUri(): Uri {
-        return Uri.fromFile(
-            File(
-                cacheDir,
-                "cropped_${getFileName()}.jpg"
-            )
-        )
-    }
-
-    private fun getRealPathFromURI(uri: Uri): String {
-        val projection = arrayOf(MediaStore.Images.Media.DATA)
-        val cursor = contentResolver.query(uri, projection, null, null, null)
-        return cursor?.let { c ->
-            val columnIndex = c.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)
-            c.moveToFirst()
-            val path = c.getString(columnIndex)
-            c.close()
-            path
-        } ?: uri.path ?: ""
-    }
-
-    private fun getFileName(): String = SimpleDateFormat(FILENAME_FORMAT, Locale.US)
-        .format(System.currentTimeMillis())
 
     private fun openCropActivity(sourceUri: Uri, destinationUri: Uri) {
         val options = UCrop.Options()
@@ -218,7 +167,7 @@ class MainActivity : AppCompatActivity() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
+                    it.setSurfaceProvider(binding?.viewFinder?.surfaceProvider)
                 }
 
             val imageAnalyzer = ImageAnalysis.Builder()
@@ -293,5 +242,24 @@ class MainActivity : AppCompatActivity() {
 
             image.close()
         }
+    }
+
+    override fun getLayoutResId(): Int = R.layout.activity_main
+
+    override fun initializeViewModel() {
+        binding?.viewModel = viewModel
+    }
+
+    override fun initializeUiEvent() {
+        if (allPermissionsGranted()) {
+            startCamera()
+        } else {
+            ActivityCompat.requestPermissions(
+                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS
+            )
+        }
+
+        binding?.imageCaptureButton?.setOnClickListener { takePhoto() }
+        cameraExecutor = Executors.newSingleThreadExecutor()
     }
 }
