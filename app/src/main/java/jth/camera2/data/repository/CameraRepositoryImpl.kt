@@ -12,7 +12,7 @@ import java.util.*
 import javax.inject.Inject
 
 class CameraRepositoryImpl @Inject constructor(
-    private val localSource: CameraRemoteSource,
+    private val remoteSource: CameraRemoteSource,
 ) : CameraRepository {
     companion object {
         private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
