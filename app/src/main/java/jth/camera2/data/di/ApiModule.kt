@@ -101,24 +101,19 @@ internal object ApiModule {
     fun providesRetrofit(
         client: OkHttpClient,
         @ApplicationContext context: Context
-    ): Retrofit? {
-        val type = API_TYPE_WWW
-        var url: String =  BPAccess.getUrl_B(context)
-
-        if (!TextUtils.isEmpty(type)) {
-            when (type) {
-                API_TYPE_WWW -> url ="https://if.aladin.co.kr/"
-                API_TYPE_W_TEST -> url = "https://if.aladin.co.kr/"
-                API_TYPE_TEST -> url = BASE_URL_TEST
-            }
-        }
-
+    ): Retrofit {
         val gson = GsonBuilder()
             .setLenient()
             .create()
 
         return Retrofit.Builder()
-            .baseUrl(url)
+            .baseUrl(
+                if (BuildConfig.DEBUG) {
+                    BuildConfig.BASE_URL
+                } else {
+                    BPAccess.getUrl_B(context)
+                }
+            )
             .addConverterFactory(GsonConverterFactory.create(gson))
             .client(client)
             .build()

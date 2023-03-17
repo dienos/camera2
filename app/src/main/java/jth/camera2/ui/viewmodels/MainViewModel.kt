@@ -19,8 +19,10 @@ class MainViewModel @Inject constructor(
     private val getRealPathFromUriUseCase: GetRealPathFromUriUseCase
 ) : BaseViewModel() {
     fun getImageUri(dir: File): Uri = getImageUriUseCase.invoke(dir)
+
     fun getContentValues(isCroppedFile: Boolean, type: String, path: String): ContentValues =
         getContentValuesUseCase.invoke(isCroppedFile, type, path)
+
     fun getRealPathFromUri(resolver: ContentResolver, uri: Uri): String =
         getRealPathFromUriUseCase.invoke(resolver, uri)
 }
